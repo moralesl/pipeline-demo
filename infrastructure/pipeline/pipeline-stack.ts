@@ -1,0 +1,40 @@
+import { Construct } from "constructs";
+import { Stack, StackProps } from "aws-cdk-lib";
+import { CodePipeline, CodePipelineSource, ShellStep } from "aws-cdk-lib/pipelines";
+
+import { DevelopmentStage } from "./development-stage";
+
+export interface PipelineStackProps extends StackProps {
+  readonly githubRepositoryOwner: string;
+  readonly githubRepositoryName: string;
+  readonly githubRepositoryBranch: string;
+}
+
+const getRepositoryString = (pipelineStackProps: PipelineStackProps): string => {
+  return `${pipelineStackProps.githubRepositoryOwner}/${pipelineStackProps.githubRepositoryName}`;
+};
+
+export class PipelineStack extends Stack {
+  constructor(scope: Construct, id: string, props: PipelineStackProps) {
+    super(scope, id, props);
+
+    const pipeline = new CodePipeline(this, "Pipeline", {
+      pipelineName: "PipelineDemoPipeline",
+      synth: new ShellStep("SynthStep", {
+        input: CodePipelineSource.gitHub(getRepositoryString(props), props.githubRepositoryBranch),
+
+        // Update npm before running commands, see also https://stackoverflow.com/questions/74801639/running-npm-ci-in-aws-codepipeline-fails-cannot-read-property-aws-cdk-lib
+        installCommands: ['npm version && npm i -g npm@latest'],
+        commands: ["npm ci", "npm run build", "npx cdk synth"],
+      }),
+    });
+
+    // This is where you can add additional application stages
+    pipeline.addStage(new DevelopmentStage(this, "DevelopmentStage", {
+      env: {
+        account: process.env.CDK_DEFAULT_ACCOUNT,
+        region: process.env.CDK_DEFAULT_REGION,
+      },
+    }));
+  }
+}
